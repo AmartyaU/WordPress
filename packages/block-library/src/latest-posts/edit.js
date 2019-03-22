@@ -7,7 +7,11 @@ import classnames from 'classnames';
 /**
  * WordPress dependencies
  */
-import { Component, Fragment } from '@wordpress/element';
+import {
+	Component,
+	Fragment,
+	RawHTML,
+} from '@wordpress/element';
 import {
 	PanelBody,
 	Placeholder,
@@ -21,12 +25,11 @@ import apiFetch from '@wordpress/api-fetch';
 import { addQueryArgs } from '@wordpress/url';
 import { __ } from '@wordpress/i18n';
 import { dateI18n, format, __experimentalGetSettings } from '@wordpress/date';
-import { decodeEntities } from '@wordpress/html-entities';
 import {
 	InspectorControls,
 	BlockAlignmentToolbar,
 	BlockControls,
-} from '@wordpress/editor';
+} from '@wordpress/block-editor';
 import { withSelect } from '@wordpress/data';
 
 /**
@@ -43,7 +46,7 @@ class LatestPostsEdit extends Component {
 		this.state = {
 			categoriesList: [],
 		};
-		this.updateAttribute = this.updateAttribute.bind( this );
+		this.toggleDisplayPostDate = this.toggleDisplayPostDate.bind( this );
 	}
 
 	componentWillMount() {
@@ -69,56 +72,21 @@ class LatestPostsEdit extends Component {
 		this.isStillMounted = false;
 	}
 
-	updateAttribute( name, value ) {
+	toggleDisplayPostDate() {
+		const { displayPostDate } = this.props.attributes;
 		const { setAttributes } = this.props;
 
-		setAttributes( { [ name ]: value } );
+		setAttributes( { displayPostDate: ! displayPostDate } );
 	}
 
 	render() {
 		const { attributes, setAttributes, latestPosts } = this.props;
 		const { categoriesList } = this.state;
-		const { displayPostFeaturedImage, displayPostDate, displayPostAuthor, align, postLayout, columns, order, orderBy, categories, postsToShow } = attributes;
+		const { displayPostDate, align, postLayout, columns, order, orderBy, categories, postsToShow } = attributes;
 
 		const inspectorControls = (
 			<InspectorControls>
-				<PanelBody title={ __( 'Display Settings' ) }>
-					<QueryControls
-						onNumberOfItemsChange={ ( value ) => setAttributes( { postsToShow: value } ) }
-					/>
-					{ postLayout === 'grid' &&
-						<RangeControl
-							label={ __( 'Columns' ) }
-							value={ columns }
-							onChange={ ( value ) => setAttributes( { columns: value } ) }
-							min={ 2 }
-							max={ ! hasPosts ? MAX_POSTS_COLUMNS : Math.min( MAX_POSTS_COLUMNS, latestPosts.length ) }
-						/>
-					}
-				</PanelBody>
-
-				<PanelBody title={ __( 'Featured Image Settings' ) }>
-					<ToggleControl
-						label={ __( 'Featured image' ) }
-						checked={ displayPostFeaturedImage }
-						onChange={ ( value ) => this.updateAttribute( 'displayPostFeaturedImage', value ) }
-					/>
-				</PanelBody>
-
-				<PanelBody title={ __( 'Post Meta Settings' ) }>
-					<ToggleControl
-						label={ __( 'Display post date' ) }
-						checked={ displayPostDate }
-						onChange={ ( value ) => this.updateAttribute( 'displayPostDate', value ) }
-					/>
-					<ToggleControl
-						label={ __( 'Display post author' ) }
-						checked={ displayPostAuthor }
-						onChange={ ( value ) => this.updateAttribute( 'displayPostAuthor', value ) }
-					/>
-				</PanelBody>
-
-				<PanelBody title={ __( 'Sorting and Filtering' ) }>
+				<PanelBody title={ __( 'Latest Posts Settings' ) }>
 					<QueryControls
 						{ ...{ order, orderBy } }
 						numberOfItems={ postsToShow }
@@ -127,7 +95,23 @@ class LatestPostsEdit extends Component {
 						onOrderChange={ ( value ) => setAttributes( { order: value } ) }
 						onOrderByChange={ ( value ) => setAttributes( { orderBy: value } ) }
 						onCategoryChange={ ( value ) => setAttributes( { categories: '' !== value ? value : undefined } ) }
+						onNumberOfItemsChange={ ( value ) => setAttributes( { postsToShow: value } ) }
 					/>
+					<ToggleControl
+						label={ __( 'Display post date' ) }
+						checked={ displayPostDate }
+						onChange={ this.toggleDisplayPostDate }
+					/>
+					{ postLayout === 'grid' &&
+						<RangeControl
+							label={ __( 'Columns' ) }
+							value={ columns }
+							onChange={ ( value ) => setAttributes( { columns: value } ) }
+							min={ 2 }
+							max={ ! hasPosts ? MAX_POSTS_COLUMNS : Math.min( MAX_POSTS_COLUMNS, latestPosts.length ) }
+							required
+						/>
+					}
 				</PanelBody>
 			</InspectorControls>
 		);
@@ -177,16 +161,12 @@ class LatestPostsEdit extends Component {
 				{ inspectorControls }
 				<BlockControls>
 					<BlockAlignmentToolbar
-						isCollapsed={ true }
 						value={ align }
 						onChange={ ( nextAlign ) => {
 							setAttributes( { align: nextAlign } );
 						} }
 					/>
-					<Toolbar
-						isCollapsed={ true }
-						controls={ layoutControls }
-					/>
+					<Toolbar controls={ layoutControls } />
 				</BlockControls>
 				<ul
 					className={ classnames( this.props.className, {
@@ -195,30 +175,27 @@ class LatestPostsEdit extends Component {
 						[ `columns-${ columns }` ]: postLayout === 'grid',
 					} ) }
 				>
-					{ displayPosts.map( ( post, i ) =>
-						<li key={ i }>
-							{ displayPostFeaturedImage && post._embedded[ 'wp:featuredmedia' ] &&
-								<img
-									alt={ post._embedded[ 'wp:featuredmedia' ][ 0 ].title.rendered }
-									src={ post._embedded[ 'wp:featuredmedia' ][ 0 ].source_url }
-									className="wp-block-latest-posts__post-featured-image"
-								/>
-							}
-							<a href={ post.link } target="_blank">{ decodeEntities( post.title.rendered.trim() ) || __( '(Untitled)' ) }</a>
-							{ displayPostDate && post.date_gmt &&
-								<time dateTime={ format( 'c', post.date_gmt ) } className="wp-block-latest-posts__post-date">
-									{ dateI18n( dateFormat, post.date_gmt ) }
-								</time>
-							}
-
-							{ displayPostAuthor &&
-								<span className="wp-block-latest-posts__post-author">
-									{ __( 'by' ) } { post._embedded.author[ 0 ].name }
-								</span>
-							}
-
-						</li>
-					) }
+					{ displayPosts.map( ( post, i ) => {
+						const titleTrimmed = post.title.rendered.trim();
+						return (
+							<li key={ i }>
+								<a href={ post.link } target="_blank" rel="noreferrer noopener">
+									{ titleTrimmed ? (
+										<RawHTML>
+											{ titleTrimmed }
+										</RawHTML>
+									) :
+										__( '(Untitled)' )
+									}
+								</a>
+								{ displayPostDate && post.date_gmt &&
+									<time dateTime={ format( 'c', post.date_gmt ) } className="wp-block-latest-posts__post-date">
+										{ dateI18n( dateFormat, post.date_gmt ) }
+									</time>
+								}
+							</li>
+						);
+					} ) }
 				</ul>
 			</Fragment>
 		);
@@ -233,7 +210,6 @@ export default withSelect( ( select, props ) => {
 		order,
 		orderby: orderBy,
 		per_page: postsToShow,
-		_embed: 1,
 	}, ( value ) => ! isUndefined( value ) );
 	return {
 		latestPosts: getEntityRecords( 'postType', 'post', latestPostsQuery ),
